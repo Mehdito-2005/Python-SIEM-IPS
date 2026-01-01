@@ -4,7 +4,7 @@ import json
 import subprocess
 from collections import defaultdict
 from datetime import datetime
-
+from logger import log_event
 # config
 LOG_FILE = "/var/log/auth.log"  # where linux stores the ssh logs
 THRESHOLD = 3                   # max fails allowed before ban
@@ -80,15 +80,8 @@ class LogMonitor:
             self.failed_logins[ip] = [] # reset count so we don't spam bans
 
     def alert(self, username, ip, count):
-        log_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "level": "CRITICAL",
-            "type": "BRUTE_FORCE",
-            "user": username,
-            "ip": ip,
-            "msg": f"User failed {count} times in < {WINDOW}s. Banning."
-        }
-        print("\n" + json.dumps(log_entry, indent=4) + "\n")
+        msg = f"User failed {count} times in < {WINDOW}s. Banning IP."
+        log_event("CRITICAL", "BRUTE_FORCE", ip, msg)
 
 if __name__ == "__main__":
     siem = LogMonitor()

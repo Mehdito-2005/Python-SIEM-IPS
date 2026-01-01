@@ -2,22 +2,22 @@ import hashlib
 import time
 import os
 import json
+import shutil
 from datetime import datetime
+from logger import log_event
 
 class FileIntegrityMonitor:
     def __init__(self, files_to_monitor):
         self.files_to_monitor = files_to_monitor
         self.baseline = {}
+        self.backup_dir = "backups"
+        if not os.path.exists(self.backup_dir):
+            os.makedirs(self.backup_dir)
 
     def calculate_hash(self, file_path):
-        """
-        Calculates the SHA-256 hash. 
-        Using SHA256 because MD5 is basically broken now lol.
-        """
         sha256_hash = hashlib.sha256()
         try:
             with open(file_path, "rb") as f:
-                # Reading 4k bytes at a time so I don't crash my RAM with massive files
                 for byte_block in iter(lambda: f.read(4096), b""):
                     sha256_hash.update(byte_block)
             return sha256_hash.hexdigest()
@@ -25,25 +25,32 @@ class FileIntegrityMonitor:
             return None
 
     def create_baseline(self):
-        """
-        Saves the 'clean' state of the files before monitoring starts.
-        """
-        print(f"[*] Calculating hashes for {len(self.files_to_monitor)} files...")
+        print(f"[*] Creating baseline and backups for {len(self.files_to_monitor)} files...")
         for file_path in self.files_to_monitor:
             file_hash = self.calculate_hash(file_path)
             if file_hash:
                 self.baseline[file_path] = file_hash
-                print(f"    [+] Saved baseline for: {file_path}")
+                # Create backup
+                file_name = os.path.basename(file_path)
+                backup_path = os.path.join(self.backup_dir, file_name)
+                shutil.copy(file_path, backup_path)
+                print(f"    [+] Backup created: {backup_path}")
             else:
-                print(f"    [!] Weird, couldn't find {file_path}. Skipping.")
-        print("[*] Baseline ready. Don't touch the files now!\n")
+                print(f"    [!] File {file_path} not found. Skipping.")
+        print("[*] Baseline ready. Monitoring started.\n")
 
-    def monitor(self, interval=5):
-        """
-        Infinite loop that checks the files every few seconds.
-        """
+    def restore_file(self, file_path):
+        file_name = os.path.basename(file_path)
+        backup_path = os.path.join(self.backup_dir, file_name)
+        try:
+            shutil.copy(backup_path, file_path)
+            print(f"    [+] Success: File restored from backup.")
+            self.alert(file_path, "FILE_RESTORED", "User authorized rollback.")
+        except Exception as e:
+            print(f"    [!] Restore failed: {e}")
+
+    def monitor(self, interval=3):
         print(f"[*] Watching files... scanning every {interval} seconds.")
-        print("    (Hit Ctrl+C to kill it)")
         
         try:
             while True:
@@ -55,44 +62,50 @@ class FileIntegrityMonitor:
 
                     # Scenario 1: Hash mismatch (Modification detected)
                     if current_hash and original_hash and current_hash != original_hash:
-                        self.alert(file_path, "FILE_MODIFIED", f"Hash changed! old={original_hash[:8]}... new={current_hash[:8]}...")
+                        print(f"\n[!] ALERT: {file_path} has been modified!")
+                        self.alert(file_path, "FILE_MODIFIED", f"Hash mismatch detected.")
                         
-                        # Update the baseline so it doesn't spam me with the same alert 100 times
-                        self.baseline[file_path] = current_hash
+                        # PROMPT THE USER
+                        response = input(f"    [?] Do you want to restore the original file? (y/n): ").lower()
+                        
+                        if response == 'y':
+                            self.restore_file(file_path)
+                            # After restore, hash matches baseline again, so no update needed
+                        else:
+                            print(f"    [+] Change authorized. Updating baseline.")
+                            self.baseline[file_path] = current_hash
+                            self.alert(file_path, "CHANGE_AUTHORIZED", "User allowed file modification.")
 
                     # Scenario 2: File is gone (Deletion detected)
                     elif not current_hash and original_hash:
-                        self.alert(file_path, "FILE_DELETED", "File just vanished from disk.")
-                        del self.baseline[file_path]
+                        print(f"\n[!] ALERT: {file_path} has been deleted!")
+                        self.alert(file_path, "FILE_DELETED", "File vanished.")
+                        
+                        response = input(f"    [?] Do you want to recover the file? (y/n): ").lower()
+                        
+                        if response == 'y':
+                            self.restore_file(file_path)
+                        else:
+                            print(f"    [+] Deletion authorized.")
+                            del self.baseline[file_path]
 
         except KeyboardInterrupt:
-            print("\n[*] Stopping monitor. Bye.")
+            print("\n[*] Stopping monitor.")
 
     def alert(self, target, alert_type, message):
-        """
-        Prints the alert in JSON format so it looks professional/parsable.
-        """
-        log_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "level": "CRITICAL",
-            "alert_type": alert_type,
-            "target": target,
-            "message": message
-        }
-        # dumping to json makes it easier to ingest into Splunk/ELK later
-        print(json.dumps(log_entry, indent=4))
+        log_event("CRITICAL", alert_type, target, message)
 
 if __name__ == "__main__":
-    # 1. Setup a dummy file to test the hashing
+    # 1. Setup a dummy file
     test_file = "secret_passwords.txt"
-    with open(test_file, "w") as f:
-        f.write("SuperSecretPassword123")
+    if not os.path.exists(test_file):
+        with open(test_file, "w") as f:
+            f.write("SuperSecretPassword123")
 
-    # 2. List of files to watch
-    # In a real deployment, I'd point this to /etc/passwd or /etc/shadow
+    # 2. Files to watch
     files = [test_file]
     
-    # 3. Fire up the monitor
+    # 3. Start Monitor
     fim = FileIntegrityMonitor(files)
     fim.create_baseline()
     fim.monitor(interval=3)
