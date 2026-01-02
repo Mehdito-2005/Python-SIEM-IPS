@@ -125,7 +125,6 @@ The dashboard highlights:
 
 All counters update live as events are detected by the FIM, NIDS, and log analysis modules.
 
-![ClearData SIEM Dashboard – Critical, Warning, and Info Events](dashboard/dashboard.png)
 
 ---
 
