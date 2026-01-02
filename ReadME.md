@@ -113,17 +113,6 @@ Press `Ctrl + C` in the terminal to terminate all background processes.
 
 ---
 
-## 📊 Dashboard Preview
-
-The screenshot below shows the **ClearData SIEM dashboard** displaying real-time security visibility across the system.
-
-The dashboard highlights:
-
-* 🚨 **Critical Threats** – confirmed attacks requiring immediate action
-* ⚠️ **Warnings** – suspicious behavior and policy violations
-* ℹ️ **Informational Events** – normal security-related activity
-
-All counters update live as events are detected by the FIM, NIDS, and log analysis modules.
 
 
 ---
