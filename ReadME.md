@@ -1,59 +1,219 @@
-# EagleEye: Custom Host-Based SIEM & Dashboard
-**A full-stack security monitoring system with real-time web visualization and active defense.**
+# 🛡️ ClearData SIEM
 
-![Python](https://img.shields.io/badge/Python-3.x-blue?style=flat&logo=python)
-![Flask](https://img.shields.io/badge/Frontend-Flask-lightgrey?style=flat&logo=flask)
-![SQLite](https://img.shields.io/badge/Database-SQLite-blue?style=flat&logo=sqlite)
-![Security](https://img.shields.io/badge/Focus-Blue_Team-red?style=flat&logo=security)
+**Lightweight Security Information & Event Management for Linux**
 
-## 📌 Project Overview
-EagleEye is a modular **Security Information and Event Management (SIEM)** system built from scratch. It centralizes logs into a database, visualizes threats on a real-time web dashboard, and performs **Active Defense** measures.
+ClearData is a custom-built, lightweight **SIEM (Security Information & Event Management)** suite designed for Linux environments. It combines **File Integrity Monitoring (FIM)**, **Network Intrusion Detection (NIDS)**, and **Log Analysis (HIDS)** into a single real-time security dashboard.
 
-It consists of three core components:
-1.  **The Agents (Sensors):** Python scripts that monitor File Integrity, Network Traffic, and Auth Logs.
-2.  **The Brain (Logger):** A centralized SQLite database that ingests alerts from all agents.
-3.  **The Eyes (Dashboard):** A Flask-based web interface that auto-refreshes to show attacks as they happen.
+Unlike purely passive monitoring tools, ClearData includes an **Active Intrusion Prevention System (IPS)** that can automatically revert unauthorized file changes and block malicious IP addresses using the system firewall (`ufw`).
 
 ---
 
-## 🛠️ Architecture
+## ✨ Key Features
 
-### 1. The Dashboard (Web UI)
-* **File:** `dashboard.py`
-* **Tech:** Flask, HTML/CSS, SQLite.
-* **Function:** Reads the database every 5 seconds and displays a color-coded threat table (Red for Critical, Green for Info).
+### 🖥️ Centralized Security Dashboard
 
-### 2. File Integrity Monitor (FIM) with Rollback
-* **File:** `simple_fim.py`
-* **Function:** Calculates SHA-256 hashes of sensitive files.
-* **Active Defense:** If a file is modified (hash mismatch), it triggers an **Automated Rollback Sequence**, prompting the user to restore the file from a secure backup immediately.
+* Real-time web interface built with **Flask**
+* Live counters for:
 
-### 3. Network Intrusion Detector (NIDS)
-* **File:** `simple_nids.py`
-* **Function:** Detects rapid port scanning using heuristic analysis (sliding window logic) to identify reconnaissance attempts.
-
-### 4. Automated IPS
-* **File:** `simple_siem.py`
-* **Function:** Parses system logs for brute-force attempts and automatically bans IPs via UFW.
+  * 🚨 Critical threats
+  * ⚠️ Warnings
+  * ℹ️ Informational events
+* Auto-refreshes every **2 seconds**
 
 ---
 
-## 🚀 Installation & Usage
+### 📂 File Integrity Monitoring (FIM) + Active IPS
 
-### Prerequisites
-* Python 3.x
-* Flask (`pip install flask`)
+* Continuously monitors critical files (e.g. `secret_passwords.txt`)
+* Detects unauthorized file changes using hash comparison
+* **Auto-Revert:**
 
-### Running the System
-First, run the logger to initialize the database. Then, use separate terminals to run the dashboard and the agents.
+  * If a change is not authorized, the file is automatically restored from a secure backup
+
+---
+
+### 🌐 Network Intrusion Detection System (NIDS)
+
+* Detects **port scanning behavior** (e.g. Nmap scans)
+* Flags IP addresses that access **more than 5 unique ports within 10 seconds**
+* Generates real-time alerts in the dashboard
+
+---
+
+### 🔐 Log Analysis (SIEM / HIDS)
+
+* Monitors Linux authentication logs (`/var/log/auth.log`)
+* Detects:
+
+  * SSH brute-force attempts
+* **Auto-Ban:**
+
+  * Automatically blocks attacker IPs via `ufw` after **3 failed login attempts**
+
+---
+
+## 🧰 System Requirements
+
+| Requirement | Details                                               |
+| ----------- | ----------------------------------------------------- |
+| OS          | Linux (Ubuntu / Mint / Kali recommended)              |
+| Python      | Python 3.x                                            |
+| Permissions | Root / sudo (required for firewall & packet sniffing) |
+| Firewall    | `ufw`                                                 |
+
+---
+
+## 🛠️ Installation
+
+### 1️⃣ Install Dependencies
 
 ```bash
-# 1. Initialize the Database
-python3 logger.py
+sudo apt update
+sudo apt install ufw
+pip3 install flask psutil
+```
 
-# 2. Start the Dashboard (Terminal 1)
-python3 dashboard.py
-# (Access the UI at [http://127.0.0.1:5000](http://127.0.0.1:5000))
+---
 
-# 3. Start the Agent (Terminal 2)
-python3 simple_fim.py
+### 2️⃣ Initialize the Database
+
+Creates the SQLite database (`siem_events.db`) used to store alerts and logs.
+
+```bash
+python3 setup_db.py
+```
+
+---
+
+## 🚦 Usage
+
+### 🔘 One-Click Launcher (Recommended)
+
+Runs the **dashboard and all monitoring modules** simultaneously.
+
+```bash
+sudo python3 launcher.py
+```
+
+**Dashboard:**
+Open your browser at:
+
+```
+http://127.0.0.1:5000
+```
+
+**Default Login:**
+
+```
+admin123
+```
+
+**Stopping the system:**
+Press `Ctrl + C` in the terminal to terminate all background processes.
+
+---
+
+## 📊 Dashboard Preview
+
+The screenshot below shows the **ClearData SIEM dashboard** displaying real-time security visibility across the system.
+
+The dashboard highlights:
+
+* 🚨 **Critical Threats** – confirmed attacks requiring immediate action
+* ⚠️ **Warnings** – suspicious behavior and policy violations
+* ℹ️ **Informational Events** – normal security-related activity
+
+All counters update live as events are detected by the FIM, NIDS, and log analysis modules.
+
+![ClearData SIEM Dashboard – Critical, Warning, and Info Events](dashboard/dashboard.png)
+
+---
+
+## 📁 Project Structure
+
+```
+ClearData-SIEM/
+├── launcher.py        # Master launcher for all components
+├── dashboard.py       # Flask-based web dashboard
+├── simple_siem.py     # Log analysis (SSH brute-force detection)
+├── simple_nids.py     # Network intrusion detection (port scanning)
+├── simple_fim.py      # File integrity monitoring
+├── simple_ips.py      # Active response engine (firewall banning)
+├── setup_db.py        # Database initialization/reset
+├── logger.py          # Shared SQLite logging utility
+└── siem_events.db     # SQLite database (generated)
+```
+
+---
+
+## 🧪 Testing the System
+
+### ✅ Test 1: File Integrity Monitor (FIM)
+
+Modify the monitored file manually:
+
+```bash
+echo "Malicious Payload" >> secret_passwords.txt
+```
+
+**Expected Result:**
+
+* Change is detected immediately
+* User is prompted for authorization
+* If unauthorized → file is automatically reverted
+
+---
+
+### ✅ Test 2: Network Intrusion Detection (NIDS)
+
+Simulate a port scan against your own machine:
+
+```bash
+nmap -sT -p 1-100 127.0.0.1
+```
+
+**Expected Result:**
+
+* Port scan detected
+* **CRITICAL alert** appears on the dashboard
+
+---
+
+### ✅ Test 3: Log Analysis & Active IPS (SSH Brute Force)
+
+Simulate SSH login failures:
+
+```bash
+logger -t sshd "Failed password for invalid user badguy from 10.10.10.5 port 22 ssh2"
+```
+
+Run this command **three times**.
+
+**Expected Result:**
+
+* IP `10.10.10.5` is automatically blocked via `ufw`
+* Alert logged in the dashboard
+
+---
+
+## ⚠️ Disclaimer
+
+> This project is intended for **educational and research purposes only**.
+
+ClearData actively modifies firewall rules and restores files automatically.
+**Do not deploy on production systems** without careful review, as misconfiguration could result in:
+
+* Accidental IP blocking
+* Self-lockout from the system
+
+Use responsibly.
+
+---
+
+## 📌 Future Improvements
+
+* Role-based dashboard authentication
+* Email / webhook alerting
+* Rule customization via UI
+* Support for additional log sources
+* Dockerized deployment

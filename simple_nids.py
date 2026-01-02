@@ -2,6 +2,7 @@ import psutil
 import time
 from collections import defaultdict
 from logger import log_event
+import os
 
 # Configuration
 THRESHOLD_PORTS = 5      
@@ -9,20 +10,23 @@ WINDOW_SECONDS = 10
 CHECK_INTERVAL = 0.5     
 
 class NetworkDetector:
+    """
+    Monitors active TCP connections to detect Port Scanning activities.
+    """
     def __init__(self):
-        # Structure: { ip: [ {time: 123, port: 80}, ... ] }
+        # Scan History: { ip: [ {time: 123, port: 80}, ... ] }
         self.scan_history = defaultdict(list)
         self.alerted_ips = [] 
 
     def get_connections(self):
+        """Retrieves current IPv4 TCP connections (Requires Root)."""
         try:
-            # Snapshot of current IPv4 TCP connections
             return psutil.net_connections(kind='inet')
         except psutil.AccessDenied:
-            return [] # Requires sudo/root privileges
+            return []
 
     def analyze_traffic(self):
-        print(f"[*] NIDS is live. Threshold: >{THRESHOLD_PORTS} ports in {WINDOW_SECONDS}s")
+        print(f"[*] NIDS Active. Threshold: >{THRESHOLD_PORTS} ports in {WINDOW_SECONDS}s")
         
         try:
             while True:
@@ -30,7 +34,7 @@ class NetworkDetector:
                 connections = self.get_connections()
 
                 for conn in connections:
-                    # Filter for remote connections (raddr)
+                    # Filter for remote connections where IP is established
                     if conn.raddr: 
                         remote_ip = conn.raddr.ip
                         local_port = conn.laddr.port
@@ -48,11 +52,11 @@ class NetworkDetector:
 
     def check_for_scans(self, current_time):
         for ip, hits in list(self.scan_history.items()):
-            # 1. Sliding Window: Remove hits older than WINDOW_SECONDS
+            # 1. Prune old history based on sliding window
             valid_hits = [h for h in hits if (current_time - h['time']) < WINDOW_SECONDS]
             self.scan_history[ip] = valid_hits
 
-            # 2. Count Unique Ports (Port Scan Detection)
+            # 2. Count distinct ports accessed
             unique_ports = {h['port'] for h in valid_hits}
 
             # 3. Trigger Alert
@@ -61,14 +65,20 @@ class NetworkDetector:
                     self.alert(ip, list(unique_ports))
                     self.alerted_ips.append(ip) 
             
-            # Reset alert state if activity stops
+            # Reset alert state if activity ceases
             if len(valid_hits) == 0 and ip in self.alerted_ips:
                 self.alerted_ips.remove(ip)
 
     def alert(self, ip, ports):
-        msg = f"Source {ip} accessed {len(ports)} distinct ports in < {WINDOW_SECONDS}s"
+        msg = f"Port Scan Detected: Accessed {len(ports)} ports in < {WINDOW_SECONDS}s"
+        print(f"    [!] CRITICAL: {msg} from {ip}")
+        # Log as CRITICAL so the IPS picks it up
         log_event("CRITICAL", "PORT_SCAN", ip, msg)
 
 if __name__ == "__main__":
+    if os.geteuid() != 0:
+        print("[!] Error: NIDS requires root (sudo) to see network traffic.")
+        exit(1)
+        
     nids = NetworkDetector()
     nids.analyze_traffic()

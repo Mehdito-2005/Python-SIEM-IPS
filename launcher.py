@@ -1,53 +1,54 @@
 import subprocess
 import time
-import sys
 import os
+import signal
+import sys
 
-# List of scripts to run
-# specific filenames you are using:
-SCRIPTS = [
-    "dashboard.py",
-    "simple_fim.py",
-    "simple_nids.py"
-    # "simple_siem.py"  <-- Uncomment this if you are using the IPS script too
+# Configuration: List of modules to execute
+PROCESSES = [
+    ["python3", "dashboard.py"],     
+    ["python3", "simple_fim.py"],    
+    ["python3", "simple_nids.py"],   
+    ["python3", "simple_siem.py"],   
+    ["python3", "simple_ips.py"]     
 ]
 
-processes = []
+jobs = []
 
-def start_processes():
-    print(f"[*] Starting EagleEye System...")
-    print(f"[*] Interpreter: {sys.executable}")
+def cleanup(sig, frame):
+    """Signal handler to terminate background processes gracefully."""
+    print("\n\n[*] Shutting down SIEM Suite...")
+    for process in jobs:
+        print(f"    [-] Killing PID {process.pid}...")
+        process.terminate()
+    sys.exit(0)
+
+def main():
+    # Root privileges are required for raw socket access (NIDS) and log reading (SIEM)
+    if os.geteuid() != 0:
+        print("[!] Warning: This script should be run with 'sudo' for full functionality.")
+        time.sleep(2)
+
+    print(f"[*] Initializing SIEM Suite ({len(PROCESSES)} modules)...")
     
-    for script in SCRIPTS:
-        if not os.path.exists(script):
-            print(f"[!] Error: {script} not found. Skipping.")
-            continue
-            
-        print(f"    [+] Launching {script}...")
-        
-        # subprocess.Popen runs the script in the background
-        # sys.executable ensures we use the same 'venv' python
-        p = subprocess.Popen([sys.executable, script])
-        processes.append(p)
-        
-    print("[*] All systems operational. Press Ctrl+C to stop.\n")
+    # Register signal listener for Ctrl+C
+    signal.signal(signal.SIGINT, cleanup)
 
-def stop_processes():
-    print("\n[*] Shutting down EagleEye...")
-    for p in processes:
+    for script_cmd in PROCESSES:
         try:
-            p.terminate() # Sends a polite signal to stop
+            print(f"    [+] Launching: {' '.join(script_cmd)}")
+            p = subprocess.Popen(script_cmd)
+            jobs.append(p)
+            time.sleep(1) # Short delay to prevent database locking contention on startup
         except Exception as e:
-            print(f"    [!] Error killing process: {e}")
-    print("[*] Shutdown complete.")
+            print(f"    [!] Error starting {script_cmd}: {e}")
+
+    print("\n[*] System Online. Dashboard accessible at http://127.0.0.1:5000")
+    print("[*] Press Ctrl+C to stop all modules.\n")
+    
+    # Keep parent process alive to listen for signals
+    while True:
+        time.sleep(1)
 
 if __name__ == "__main__":
-    try:
-        start_processes()
-        
-        # Keep the main script alive so we can catch Ctrl+C
-        while True:
-            time.sleep(1)
-            
-    except KeyboardInterrupt:
-        stop_processes()
+    main()

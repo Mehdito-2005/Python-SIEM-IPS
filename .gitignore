@@ -1,5 +1,10 @@
+
 *.db
-venv/
+*.sqlite3
+
+
 __pycache__/
 *.pyc
-backups/
+
+*.log
+secret_passwords.txt.bak

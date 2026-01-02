@@ -1,65 +1,81 @@
-from flask import Flask, render_template_string
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 import sqlite3
+import os
 
 app = Flask(__name__)
+
+# --- CONFIGURATION ---
 DB_NAME = "siem_events.db"
+app.secret_key = "CHANGE_THIS_TO_RANDOM_BYTES" # Required for session security
+ADMIN_PASSWORD = "admin123" 
 
-
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>EagleEye SIEM Dashboard</title>
-    <meta http-equiv="refresh" content="5"> <style>
-        body { font-family: monospace; background-color: #1e1e1e; color: #00ff00; padding: 20px; }
-        h1 { border-bottom: 2px solid #00ff00; padding-bottom: 10px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #444; padding: 10px; text-align: left; }
-        th { background-color: #333; }
-        tr:nth-child(even) { background-color: #2a2a2a; }
-        .CRITICAL { color: #ff3333; font-weight: bold; }
-    </style>
-</head>
-<body>
-    <h1>🦅 EagleEye SIEM - Live Threat Feed</h1>
-    <table>
-        <tr>
-            <th>ID</th>
-            <th>Time</th>
-            <th>Level</th>
-            <th>Type</th>
-            <th>Source</th>
-            <th>Message</th>
-        </tr>
-        {% for row in rows %}
-        <tr class="{{ row[2] }}">
-            <td>{{ row[0] }}</td>
-            <td>{{ row[1] }}</td>
-            <td>{{ row[2] }}</td>
-            <td>{{ row[3] }}</td>
-            <td>{{ row[4] }}</td>
-            <td>{{ row[5] }}</td>
-        </tr>
-        {% endfor %}
-    </table>
-</body>
-</html>
-"""
-
-def get_alerts():
+def get_db_connection():
     conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    # Get the last 50 alerts, newest first
-    c.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 50")
-    rows = c.fetchall()
-    conn.close()
-    return rows
+    conn.row_factory = sqlite3.Row
+    return conn
+
+# --- ROUTES ---
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = None
+    if request.method == 'POST':
+        if request.form['password'] == ADMIN_PASSWORD:
+            session['logged_in'] = True
+            return redirect(url_for('index'))
+        else:
+            error = 'Invalid Password'
+    return render_template('login.html', error=error)
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    return redirect(url_for('login'))
 
 @app.route('/')
 def index():
-    alerts = get_alerts()
-    return render_template_string(HTML_TEMPLATE, rows=alerts)
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+        
+    return render_template('index.html')
+
+@app.route('/api/data')
+def get_data():
+    if not session.get('logged_in'):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Fetch recent events
+    cursor.execute("SELECT * FROM events ORDER BY id DESC LIMIT 10")
+    rows = cursor.fetchall()
+    
+    # Calculate stats using partial matching to catch composite types (e.g., "PORT_SCAN (CRITICAL)")
+    cursor.execute("SELECT COUNT(*) FROM events WHERE type LIKE '%Critical%' OR type LIKE '%CRITICAL%'")
+    critical_count = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM events WHERE type LIKE '%Warning%'")
+    warning_count = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM events WHERE type LIKE '%Info%'")
+    info_count = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    events = [dict(row) for row in rows]
+    
+    return jsonify({
+        "events": events,
+        "stats": {
+            "critical": critical_count,
+            "warning": warning_count,
+            "info": info_count
+        }
+    })
 
 if __name__ == '__main__':
-    # Run on port 5000
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    if not os.path.exists(DB_NAME):
+        print(f"[!] Database {DB_NAME} not found. Run setup_db.py first.")
+        
+    app.run(host='0.0.0.0', debug=True, port=5000)
